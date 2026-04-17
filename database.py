@@ -85,7 +85,6 @@ def init_db():
     c.execute("ALTER TABLE events ADD COLUMN IF NOT EXISTS delivery_fee NUMERIC(10,2) NOT NULL DEFAULT 0")
     c.execute("ALTER TABLE events ADD COLUMN IF NOT EXISTS address TEXT")
     c.execute("ALTER TABLE events ADD COLUMN IF NOT EXISTS created_by INTEGER REFERENCES users(id)")
-    c.execute("ALTER TABLE events ADD COLUMN IF NOT EXISTS bag_type_id INTEGER REFERENCES bag_types(id)")
 
     c.execute("""
         CREATE TABLE IF NOT EXISTS inventory_log (
@@ -126,6 +125,7 @@ def init_db():
         )
     """)
     c.execute("ALTER TABLE bag_types ADD COLUMN IF NOT EXISTS user_id INTEGER REFERENCES users(id)")
+    c.execute("ALTER TABLE events ADD COLUMN IF NOT EXISTS bag_type_id INTEGER REFERENCES bag_types(id)")
 
     c.execute("""
         CREATE TABLE IF NOT EXISTS fridge_stock (
