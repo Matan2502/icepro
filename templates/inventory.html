@@ -1,0 +1,327 @@
+{% extends "base.html" %}
+{% block title %}מלאי{% endblock %}
+{% block content %}
+<div class="page-header">
+  <h1>מלאי ומקררים</h1>
+  <div class="btn-group">
+    <button class="btn btn-primary" onclick="openAddStock()">+ הוסף מלאי</button>
+    <button class="btn" onclick="openTransfer()">העבר מלאי</button>
+    <button class="btn" onclick="openAddFridge()">+ מקרר חדש</button>
+  </div>
+</div>
+
+{% set total_bags = fridges | sum(attribute='quantity') %}
+{% set total_cap_kg = fridges | sum(attribute='capacity') %}
+{% set ns_kg = namespace(kg=0) %}
+{% for fid, fbags in stock_by_fridge.items() %}
+  {% for b in fbags %}{% set ns_kg.kg = ns_kg.kg + b.quantity * b.weight_kg %}{% endfor %}
+{% endfor %}
+
+<div class="metrics-grid" style="grid-template-columns:repeat(4,1fr)">
+  <div class="metric">
+    <div class="metric-label">סה״כ שקיות</div>
+    <div class="metric-value teal">{{ total_bags }}</div>
+  </div>
+  <div class="metric">
+    <div class="metric-label">סה״כ ק״ג</div>
+    <div class="metric-value teal">
+      {% if ns_kg.kg > 0 %}{{ "{:.0f}".format(ns_kg.kg) }}{% else %}—{% endif %}
+    </div>
+  </div>
+  <div class="metric">
+    <div class="metric-label">קיבולת כוללת</div>
+    <div class="metric-value">{{ total_cap_kg }} ק״ג</div>
+  </div>
+  <div class="metric">
+    <div class="metric-label">אחוז מילוי</div>
+    <div class="metric-value amber">
+      {% if ns_kg.kg > 0 and total_cap_kg > 0 %}
+        {{ ((ns_kg.kg / total_cap_kg)*100)|round(1) }}%
+      {% else %}—{% endif %}
+    </div>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-title">מקררים</div>
+  <table class="table">
+    <thead>
+      <tr>
+        <th>שם</th>
+        <th>מיקום</th>
+        <th>שקיות</th>
+        <th style="color:#185FA5">פירוט שקיות</th>
+        <th style="color:#185FA5">ק״ג בפועל</th>
+        <th>קיבולת (ק״ג)</th>
+        <th>מילוי</th>
+        <th>פעולות</th>
+      </tr>
+    </thead>
+    <tbody>
+    {% for f in fridges %}
+    {% set fbags = stock_by_fridge.get(f.id, []) %}
+    {% set ns = namespace(kg=0) %}
+    {% for b in fbags %}{% set ns.kg = ns.kg + b.quantity * b.weight_kg %}{% endfor %}
+    {% set pct_kg = ([((ns.kg / f.capacity * 100)|int), 100]|min) if (f.capacity > 0 and ns.kg > 0) else 0 %}
+    <tr>
+      <td class="fw500">{{ f.name }}</td>
+      <td class="muted">{{ f.location }}</td>
+      <td class="fw500">{{ f.quantity }}</td>
+      <td>
+        {% if fbags %}
+        <div style="display:flex;flex-direction:column;gap:3px">
+          {% for b in fbags %}
+          <span style="font-size:11px;background:#E6F1FB;color:#185FA5;border-radius:4px;padding:2px 6px;white-space:nowrap">
+            {{ b.bag_name }}: <strong>{{ b.quantity }}</strong> שק׳
+          </span>
+          {% endfor %}
+        </div>
+        {% else %}
+        <span class="muted small">—</span>
+        {% endif %}
+      </td>
+      <td class="fw500 {% if pct_kg >= 20 %}text-teal{% elif ns.kg > 0 %}text-amber{% endif %}">
+        {% if ns.kg > 0 %}
+          {{ "{:.0f}".format(ns.kg) }} ק״ג
+        {% else %}
+          <span class="muted">—</span>
+        {% endif %}
+      </td>
+      <td class="muted">{{ f.capacity }} ק״ג</td>
+      <td>
+        {% if pct_kg > 0 %}
+        <div class="bar-wrap" style="max-width:80px;display:inline-flex">
+          <div class="bar-fill {% if pct_kg < 20 %}coral{% elif pct_kg < 40 %}amber{% else %}teal{% endif %}"
+               style="width:{{ pct_kg }}%"></div>
+        </div>
+        <span class="{% if pct_kg < 20 %}text-coral{% elif pct_kg < 40 %}text-amber{% endif %}">{{ pct_kg }}%</span>
+        {% else %}
+        <span class="muted">—</span>
+        {% endif %}
+      </td>
+      <td style="white-space:nowrap">
+        <button class="btn small" onclick="openAddStock({{ f.id }})">+ מלאי</button>
+        <button class="btn small" onclick="openTransfer({{ f.id }})">העבר</button>
+        <button class="btn small" onclick="openEditFridge({{ f.id }}, '{{ f.name }}', '{{ f.location }}', {{ f.capacity }}, {{ f.quantity }})">✏ ערוך</button>
+        <button class="btn small" style="color:#D85A30" onclick="deleteFridge({{ f.id }}, '{{ f.name }}')">✕ מחק</button>
+      </td>
+    </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<div class="card" style="margin-top:1rem">
+  <div style="display:flex;align-items:center;justify-content:space-between;cursor:pointer" onclick="toggleLog()">
+    <div class="card-title" style="margin:0">היסטוריית תנועות</div>
+    <span id="log-toggle-icon" style="font-size:18px;color:#888;transition:transform 0.2s">▲</span>
+  </div>
+  <div id="log-body" style="margin-top:12px">
+    <table class="table">
+      <thead>
+        <tr><th>תאריך</th><th>מקרר</th><th>שינוי</th><th>סיבה</th></tr>
+      </thead>
+      <tbody>
+      {% for l in log %}
+      <tr>
+        <td class="muted small">{{ l.created_at.strftime('%Y-%m-%d %H:%M') if l.created_at else '—' }}</td>
+        <td>{{ l.fridge_name }}</td>
+        <td class="fw500 {% if l.change > 0 %}text-teal{% else %}text-coral{% endif %}">
+          {{ '+' if l.change > 0 else '' }}{{ l.change }}
+        </td>
+        <td class="muted">{{ l.reason or '—' }}</td>
+      </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<script>
+function toggleLog() {
+  const body = document.getElementById('log-body');
+  const icon = document.getElementById('log-toggle-icon');
+  const open = body.style.display !== 'none';
+  body.style.display = open ? 'none' : 'block';
+  icon.style.transform = open ? 'rotate(180deg)' : '';
+  localStorage.setItem('log_open', !open);
+}
+const logSaved = localStorage.getItem('log_open');
+if (logSaved === 'false') {
+  document.getElementById('log-body').style.display = 'none';
+  document.getElementById('log-toggle-icon').style.transform = 'rotate(180deg)';
+}
+
+const fridges = {{ fridges | tojson }};
+const ALL_BAG_TYPES = {{ all_bag_types | tojson }};
+
+function openAddStock(fid) {
+  showModal(`
+    <h2>הוסף מלאי</h2>
+    <div class="form-group"><label>מקרר</label>
+      <select id="m-fridge">
+        ${fridges.map(f => `<option value="${f.id}" ${f.id==fid?'selected':''}>${f.name} (${f.quantity} שק׳)</option>`).join('')}
+      </select>
+    </div>
+    <div class="form-group">
+      <label style="color:#185FA5;font-weight:500">סוג שקית <span style="font-size:11px;font-weight:400;color:#888">(לחישוב ק"ג מדויק)</span></label>
+      <select id="m-bag-type" onchange="updateKgPreview()">
+        <option value="">— ללא סוג ספציפי —</option>
+        ${ALL_BAG_TYPES.map(b => `<option value="${b.id}" data-weight="${b.weight_kg}">${b.name} (${b.weight_kg} ק"ג לשקית)</option>`).join('')}
+      </select>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label>כמות שקיות</label>
+        <input type="number" id="m-qty" value="100" min="1" oninput="updateKgPreview()">
+      </div>
+      <div class="form-group"><label>סיבה</label>
+        <input type="text" id="m-reason" value="קבלת סחורה">
+      </div>
+    </div>
+    <div id="kg-preview" style="background:#E6F1FB;color:#185FA5;border-radius:8px;padding:8px 10px;font-size:13px;margin-top:6px;display:none"></div>
+    <div class="modal-actions">
+      <button class="btn" onclick="closeModal()">ביטול</button>
+      <button class="btn btn-primary" onclick="submitAddStock()">שמור</button>
+    </div>
+  `);
+}
+
+function updateKgPreview() {
+  const sel = document.getElementById('m-bag-type');
+  const qty = parseFloat(document.getElementById('m-qty')?.value) || 0;
+  const el  = document.getElementById('kg-preview');
+  if (!el) return;
+  if (sel?.value && qty > 0) {
+    const w = parseFloat(sel.options[sel.selectedIndex].dataset.weight) || 0;
+    el.style.display = 'block';
+    el.textContent = `${qty} שקיות × ${w} ק"ג = ${(qty*w).toFixed(0)} ק"ג`;
+  } else {
+    el.style.display = 'none';
+  }
+}
+
+async function submitAddStock() {
+  const res = await fetch('/api/stock/add', {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({
+      fridge_id:   document.getElementById('m-fridge').value,
+      bag_type_id: document.getElementById('m-bag-type').value || null,
+      quantity:    document.getElementById('m-qty').value,
+      reason:      document.getElementById('m-reason').value
+    })
+  });
+  const d = await res.json();
+  if (d.ok) { closeModal(); location.reload(); }
+  else alert(d.error);
+}
+
+function openTransfer(fromId) {
+  showModal(`
+    <h2>העברת מלאי</h2>
+    <div class="form-group"><label>ממקרר</label>
+      <select id="m-from">
+        ${fridges.map(f => `<option value="${f.id}" ${f.id==fromId?'selected':''}>${f.name} (${f.quantity} שק׳)</option>`).join('')}
+      </select>
+    </div>
+    <div class="form-group"><label>למקרר</label>
+      <select id="m-to">
+        ${fridges.map(f => `<option value="${f.id}">${f.name}</option>`).join('')}
+      </select>
+    </div>
+    <div class="form-group"><label>כמות שקיות</label>
+      <input type="number" id="m-qty" value="30" min="1">
+    </div>
+    <div class="modal-actions">
+      <button class="btn" onclick="closeModal()">ביטול</button>
+      <button class="btn btn-primary" onclick="submitTransfer()">העבר</button>
+    </div>
+  `);
+}
+
+async function submitTransfer() {
+  const res = await fetch('/api/stock/transfer', {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({
+      from_fridge: document.getElementById('m-from').value,
+      to_fridge:   document.getElementById('m-to').value,
+      quantity:    document.getElementById('m-qty').value
+    })
+  });
+  const d = await res.json();
+  if (d.ok) { closeModal(); location.reload(); }
+  else alert(d.error);
+}
+
+function openAddFridge() {
+  showModal(`
+    <h2>מקרר חדש</h2>
+    <div class="form-group"><label>שם המקרר</label>
+      <input type="text" id="m-name" placeholder='למשל: ת"א דרום'>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label>מיקום</label><input type="text" id="m-loc" placeholder="עיר"></div>
+      <div class="form-group"><label>קיבולת (ק״ג)</label><input type="number" id="m-cap" value="1600"></div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn" onclick="closeModal()">ביטול</button>
+      <button class="btn btn-primary" onclick="submitAddFridge()">שמור</button>
+    </div>
+  `);
+}
+
+async function submitAddFridge() {
+  const res = await fetch('/api/fridges/add', {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({
+      name:     document.getElementById('m-name').value,
+      location: document.getElementById('m-loc').value,
+      capacity: document.getElementById('m-cap').value
+    })
+  });
+  const d = await res.json();
+  if (d.ok) { closeModal(); location.reload(); }
+}
+
+function openEditFridge(fid, fname, floc, fcap, fqty) {
+  showModal(`
+    <h2>ערוך מקרר</h2>
+    <div class="form-group"><label>שם</label><input type="text" id="m-name" value="${fname}"></div>
+    <div class="form-row">
+      <div class="form-group"><label>מיקום</label><input type="text" id="m-loc" value="${floc}"></div>
+      <div class="form-group"><label>קיבולת (ק״ג)</label><input type="number" id="m-cap" value="${fcap}"></div>
+    </div>
+    <div class="form-group"><label>מלאי נוכחי — שקיות (עדכון ידני)</label>
+      <input type="number" id="m-qty" value="${fqty}">
+    </div>
+    <div class="modal-actions">
+      <button class="btn" onclick="closeModal()">ביטול</button>
+      <button class="btn btn-primary" onclick="submitEditFridge(${fid})">שמור</button>
+    </div>
+  `);
+}
+
+async function submitEditFridge(fid) {
+  const res = await fetch(`/api/fridges/${fid}/edit`, {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({
+      name:     document.getElementById('m-name').value,
+      location: document.getElementById('m-loc').value,
+      capacity: document.getElementById('m-cap').value,
+      quantity: document.getElementById('m-qty').value
+    })
+  });
+  const d = await res.json();
+  if (d.ok) { closeModal(); location.reload(); }
+}
+
+async function deleteFridge(fid, fname) {
+  if (!confirm(`למחוק את המקרר "${fname}"?\nגם כל האירועים והיסטוריית המלאי שלו יימחקו.`)) return;
+  const res = await fetch(`/api/fridges/${fid}/delete`, {
+    method:'POST', headers:{'Content-Type':'application/json'}
+  });
+  const d = await res.json();
+  if (d.ok) location.reload();
+  else alert('שגיאה: ' + d.error);
+}
+</script>
+{% endblock %}

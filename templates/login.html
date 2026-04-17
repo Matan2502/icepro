@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>IcePro — כניסה</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+  <style>
+    body { display:flex; align-items:center; justify-content:center; min-height:100vh; background:var(--bg); }
+    .login-card { background:#fff; border:0.5px solid #e4e4e0; border-radius:16px; padding:2.5rem 2rem; width:340px; }
+    .login-logo { font-size:28px; font-weight:600; text-align:center; margin-bottom:0.25rem; }
+    .login-sub  { font-size:13px; color:#888; text-align:center; margin-bottom:2rem; }
+    .login-card .form-group { margin-bottom:14px; }
+    .login-card label { display:block; font-size:13px; color:#888; margin-bottom:4px; }
+    .login-card input { width:100%; padding:10px 12px; border:0.5px solid #ccc; border-radius:10px; font-size:15px; }
+    .login-btn { width:100%; background:#1a1a18; color:#fff; border:none; border-radius:10px; padding:11px; font-size:15px; cursor:pointer; margin-top:6px; }
+    .login-btn:hover { opacity:0.85; }
+    .login-error { background:#FCEBEB; color:#A32D2D; border-radius:8px; padding:8px 12px; font-size:13px; margin-bottom:14px; text-align:center; }
+    .user-hint { display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-top:1.5rem; }
+    .user-hint-item { border:0.5px solid #e4e4e0; border-radius:8px; padding:8px 10px; cursor:pointer; transition:background 0.1s; }
+    .user-hint-item:hover { background:#f8f8f6; }
+    .user-hint-name { font-size:13px; font-weight:500; }
+    .user-hint-user { font-size:11px; color:#888; }
+    .hint-label { font-size:11px; color:#888; text-align:center; margin-top:1.25rem; margin-bottom:6px; }
+  </style>
+</head>
+<body>
+  <div class="login-card">
+    <div class="login-logo">🧊 IcePro</div>
+    <div class="login-sub">מערכת ניהול עסק קרח</div>
+
+    {% if error %}
+    <div class="login-error">{{ error }}</div>
+    {% endif %}
+
+    <form method="post">
+      <div class="form-group">
+        <label>שם משתמש</label>
+        <input type="text" name="username" id="username" placeholder="matan / lior" autocomplete="username" autofocus>
+      </div>
+      <div class="form-group">
+        <label>סיסמה</label>
+        <input type="password" name="password" id="password" autocomplete="current-password">
+      </div>
+      <button type="submit" class="login-btn">כניסה</button>
+    </form>
+
+    <div class="hint-label">כניסה מהירה</div>
+    <div class="user-hint">
+      <div class="user-hint-item" onclick="fillLogin('matan','matan123')">
+        <div class="user-hint-name" style="color:#1D9E75">מתן</div>
+        <div class="user-hint-user">matan</div>
+      </div>
+      <div class="user-hint-item" onclick="fillLogin('lior','lior123')">
+        <div class="user-hint-name" style="color:#7F77DD">ליאור</div>
+        <div class="user-hint-user">lior</div>
+      </div>
+    </div>
+  </div>
+  <script>
+    function fillLogin(u, p) {
+      document.getElementById('username').value = u;
+      document.getElementById('password').value = p;
+    }
+  </script>
+</body>
+</html>

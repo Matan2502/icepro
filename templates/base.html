@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>IcePro — {% block title %}{% endblock %}</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+  <div class="layout">
+    <aside class="sidebar">
+      <div class="logo">🧊 IcePro</div>
+      <nav>
+        <a href="{{ url_for('dashboard') }}"      class="nav-item {% if request.endpoint=='dashboard' %}active{% endif %}">
+          <span class="dot teal"></span> דשבורד
+        </a>
+        <a href="{{ url_for('inventory') }}"      class="nav-item {% if request.endpoint=='inventory' %}active{% endif %}">
+          <span class="dot amber"></span> מלאי ומקררים
+        </a>
+        <a href="{{ url_for('events') }}"         class="nav-item {% if request.endpoint=='events' %}active{% endif %}">
+          <span class="dot purple"></span> אירועים
+        </a>
+        <a href="{{ url_for('calendar_view') }}"  class="nav-item {% if request.endpoint=='calendar_view' %}active{% endif %}">
+          <span class="dot teal"></span> יומן
+        </a>
+        <a href="{{ url_for('profit') }}"         class="nav-item {% if request.endpoint=='profit' %}active{% endif %}">
+          <span class="dot coral"></span> רווחיות
+        </a>
+        <a href="{{ url_for('costs') }}"          class="nav-item {% if request.endpoint=='costs' %}active{% endif %}">
+          <span class="dot purple"></span> עלויות שלי
+        </a>
+      </nav>
+
+      <!-- משתמש מחובר -->
+      {% if me %}
+      <div style="margin-top:auto;padding:1rem 1.25rem;border-top:0.5px solid var(--border)">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+          <div style="width:28px;height:28px;border-radius:50%;background:{{ me.color }};display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:600;color:#fff">
+            {{ me.display_name[0] }}
+          </div>
+          <div>
+            <div style="font-size:13px;font-weight:500">{{ me.display_name }}</div>
+            <div style="font-size:11px;color:#888">{{ me.username }}</div>
+          </div>
+        </div>
+        <a href="{{ url_for('logout') }}" style="font-size:12px;color:#888;text-decoration:none">התנתק ←</a>
+      </div>
+      {% endif %}
+    </aside>
+
+    <main class="main">
+      {% with messages = get_flashed_messages(with_categories=true) %}
+        {% for cat, msg in messages %}
+          <div class="alert alert-{{ cat }}">{{ msg }}</div>
+        {% endfor %}
+      {% endwith %}
+      {% block content %}{% endblock %}
+    </main>
+  </div>
+
+  <div id="modal-overlay" class="modal-overlay" onclick="closeModal()"></div>
+  <div id="modal-box" class="modal-box"></div>
+
+  <script src="{{ url_for('static', filename='js/main.js') }}"></script>
+  {% block scripts %}{% endblock %}
+</body>
+</html>

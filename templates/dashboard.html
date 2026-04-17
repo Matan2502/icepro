@@ -1,0 +1,114 @@
+{% extends "base.html" %}
+{% block title %}דשבורד{% endblock %}
+{% block content %}
+<div class="page-header">
+  <h1>שלום, {{ me.display_name }} 👋</h1>
+  <span class="muted" id="today-date"></span>
+</div>
+
+<!-- מטריקות אישיות -->
+<div style="margin-bottom:0.5rem">
+  <div style="font-size:11px;font-weight:500;color:var(--muted);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:8px">
+    הנתונים שלי החודש
+  </div>
+  <div class="metrics-grid">
+    <div class="metric" style="border-right:3px solid {{ me.color }}">
+      <div class="metric-label">אירועים שלי</div>
+      <div class="metric-value" style="color:{{ me.color }}">{{ my_totals.my_events }}</div>
+    </div>
+    <div class="metric" style="border-right:3px solid {{ me.color }}">
+      <div class="metric-label">הכנסות שלי</div>
+      <div class="metric-value" style="color:{{ me.color }}">₪{{ "{:,.0f}".format(my_totals.my_revenue or 0) }}</div>
+    </div>
+    <div class="metric" style="border-right:3px solid {{ me.color }}">
+      <div class="metric-label">רווח שלי</div>
+      <div class="metric-value" style="color:{{ me.color }}">₪{{ "{:,.0f}".format(my_totals.my_profit or 0) }}</div>
+    </div>
+  </div>
+</div>
+
+<!-- מטריקות כלליות -->
+<div style="margin-bottom:0.5rem">
+  <div style="font-size:11px;font-weight:500;color:var(--muted);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:8px">
+    נתונים כלליים — שניכם
+  </div>
+  <div class="metrics-grid">
+    <div class="metric">
+      <div class="metric-label">אירועים פעילים</div>
+      <div class="metric-value">{{ totals.active_events }}</div>
+    </div>
+    <div class="metric">
+      <div class="metric-label">🧊 שקיות זמינות</div>
+      <div class="metric-value teal">{{ totals.total_stock }}</div>
+      <div class="metric-sub">{% if total_stock_kg > 0 %}{{ total_stock_kg }} ק"ג{% else %}כל המקררים{% endif %}</div>
+    </div>
+    <div class="metric">
+      <div class="metric-label">הכנסות החודש</div>
+      <div class="metric-value amber">₪{{ "{:,.0f}".format(totals.monthly_revenue or 0) }}</div>
+    </div>
+    <div class="metric">
+      <div class="metric-label">רווח כולל</div>
+      <div class="metric-value teal">₪{{ "{:,.0f}".format(totals.monthly_profit or 0) }}</div>
+    </div>
+    <div class="metric">
+      <div class="metric-label">שותפים</div>
+      <div class="metric-value">
+        {% for u in users %}
+        <span style="display:inline-block;width:20px;height:20px;border-radius:50%;background:{{ u.color }};font-size:10px;color:#fff;text-align:center;line-height:20px;margin-left:2px">{{ u.display_name[0] }}</span>
+        {% endfor %}
+      </div>
+    </div>
+  </div>
+</div>
+
+{% if low_fridges %}
+<div class="alert alert-warning">
+  ⚠ מקרר עם מלאי נמוך:
+  {% for f in low_fridges %}{{ f.name }} ({{ f.quantity }}){% if not loop.last %}, {% endif %}{% endfor %}
+</div>
+{% endif %}
+
+<div class="grid2">
+  <div class="card">
+    <div class="card-title">מקררים — מצב מלאי</div>
+    {% for f in fridges %}
+    {% set pct = (f.quantity / f.capacity * 100)|int %}
+    <div class="fridge-row">
+      <div>
+        <div class="fw500">{{ f.name }}</div>
+        <div class="muted small">{{ f.location }}</div>
+      </div>
+      <div class="bar-wrap">
+        <div class="bar-fill {% if pct < 20 %}coral{% elif pct < 40 %}amber{% else %}teal{% endif %}" style="width:{{ pct }}%"></div>
+      </div>
+      <div class="fw500 {% if pct < 20 %}text-coral{% elif pct < 40 %}text-amber{% endif %}">{{ f.quantity }} / {{ f.capacity }}</div>
+    </div>
+    {% endfor %}
+  </div>
+
+  <div class="card">
+    <div class="card-title">אירועים קרובים</div>
+    {% for e in events %}
+    <div class="event-row">
+      <span class="badge badge-{{ e.status }}">{{ {'pending':'ממתין','active':'פעיל','done':'הושלם'}[e.status] }}</span>
+      <div class="flex1">
+        <div class="fw500">{{ e.name }}</div>
+        <div class="muted small">{{ e.event_date }} · {{ e.quantity }} שק׳</div>
+      </div>
+      <div style="display:flex;align-items:center;gap:6px">
+        <div class="fw500">₪{{ "{:,.0f}".format(e.price) }}</div>
+        {% if e.creator_name %}
+        <div style="width:20px;height:20px;border-radius:50%;background:{{ e.creator_color }};font-size:10px;color:#fff;display:flex;align-items:center;justify-content:center;font-weight:600" title="{{ e.creator_name }}">{{ e.creator_name[0] }}</div>
+        {% endif %}
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+</div>
+
+<script>
+const d = new Date();
+document.getElementById('today-date').textContent =
+  d.toLocaleDateString('he-IL', {weekday:'long', year:'numeric', month:'long', day:'numeric'});
+</script>
+{% endblock %}

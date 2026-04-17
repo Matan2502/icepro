@@ -1,0 +1,134 @@
+{% extends "base.html" %}
+{% block title %}רווחיות{% endblock %}
+{% block content %}
+<div class="page-header">
+  <h1>רווחיות</h1>
+  <form method="get" style="display:inline">
+    <select name="month" onchange="this.form.submit()" style="padding:6px 10px;border:0.5px solid #ccc;border-radius:8px;font-size:13px">
+      {% for m in months %}
+      <option value="{{ m }}" {% if m==month %}selected{% endif %}>{{ m }}</option>
+      {% endfor %}
+    </select>
+  </form>
+</div>
+
+<div class="metrics-grid">
+  <div class="metric">
+    <div class="metric-label">הכנסות (אירועים שהושלמו)</div>
+    <div class="metric-value amber">₪{{ "{:,.0f}".format(revenue) }}</div>
+  </div>
+  <div class="metric">
+    <div class="metric-label">עלויות כוללות</div>
+    <div class="metric-value text-coral">₪{{ "{:,.0f}".format(cost) }}</div>
+  </div>
+  <div class="metric">
+    <div class="metric-label">רווח נקי</div>
+    <div class="metric-value {% if net_profit >= 0 %}teal{% else %}text-coral{% endif %}">₪{{ "{:,.0f}".format(net_profit) }}</div>
+  </div>
+  <div class="metric">
+    <div class="metric-label">מרג'ין</div>
+    <div class="metric-value {% if margin >= 40 %}teal{% elif margin >= 20 %}amber{% else %}text-coral{% endif %}">{{ margin }}%</div>
+  </div>
+</div>
+
+<div class="grid2">
+  <div class="card">
+    <div class="card-title">הכנסות לפי שבוע</div>
+    <div class="chart-wrap" style="height:140px;display:flex;align-items:flex-end;gap:8px;padding-bottom:24px">
+      {% set max_w = weekly | max(attribute='total') if weekly else None %}
+      {% for w in weekly %}
+      {% set pct = ((w.total / max_w.total)*100)|int if max_w else 0 %}
+      <div style="flex:1;display:flex;flex-direction:column;align-items:center;height:100%;justify-content:flex-end">
+        <div style="font-size:11px;color:#888;margin-bottom:2px">₪{{ "{:,.0f}".format(w.total) }}</div>
+        <div style="width:100%;background:#1D9E75;border-radius:3px 3px 0 0;height:{{ pct }}%"></div>
+        <div style="font-size:11px;color:#888;margin-top:4px">שבוע {{ w.week_num }}</div>
+      </div>
+      {% endfor %}
+      {% if not weekly %}
+      <div style="color:#aaa;font-size:13px;align-self:center">אין נתונים לחודש זה</div>
+      {% endif %}
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-title">הכנסות לפי קטגוריה</div>
+    {% for cat in by_category %}
+    <div class="profit-row">
+      <span>{{ cat.category }}</span>
+      <span class="fw500">₪{{ "{:,.0f}".format(cat.total) }}</span>
+    </div>
+    {% endfor %}
+    {% if by_category %}
+    <div class="profit-row" style="border-top:0.5px solid #eee;margin-top:6px;padding-top:8px;font-weight:500">
+      <span>סה״כ</span><span style="color:#1D9E75">₪{{ "{:,.0f}".format(revenue) }}</span>
+    </div>
+    {% else %}
+    <div class="muted small">אין נתונים</div>
+    {% endif %}
+  </div>
+</div>
+
+<div class="card" style="margin-top:1rem">
+  <div class="card-title" style="display:flex;justify-content:space-between;align-items:center">
+    הוצאות
+    <button class="btn small" onclick="openAddExpense()">+ הוצאה</button>
+  </div>
+  <table class="table">
+    <thead><tr><th>תאריך</th><th>תיאור</th><th>קטגוריה</th><th>סכום</th></tr></thead>
+    <tbody>
+    {% for ex in expense_list %}
+    <tr>
+      <td class="muted small">{{ ex.expense_date }}</td>
+      <td>{{ ex.description }}</td>
+      <td><span class="badge badge-pending">{{ ex.category }}</span></td>
+      <td class="fw500 text-coral">₪{{ "{:,.0f}".format(ex.amount) }}</td>
+    </tr>
+    {% endfor %}
+    {% if not expense_list %}
+    <tr><td colspan="4" class="muted" style="text-align:center">אין הוצאות רשומות</td></tr>
+    {% endif %}
+    </tbody>
+  </table>
+</div>
+
+<script>
+const currentMonth = "{{ month }}";
+
+function openAddExpense() {
+  showModal(`
+    <h2>הוצאה חדשה</h2>
+    <div class="form-group"><label>תיאור</label><input type="text" id="m-desc" placeholder="למשל: רכישת קרח"></div>
+    <div class="form-row">
+      <div class="form-group"><label>סכום (₪)</label><input type="number" id="m-amount" value="0" step="10"></div>
+      <div class="form-group"><label>קטגוריה</label>
+        <select id="m-cat">
+          <option value="supply">ספק / קרח</option>
+          <option value="logistics">לוגיסטיקה</option>
+          <option value="maintenance">אחזקה</option>
+          <option value="general">כללי</option>
+        </select>
+      </div>
+    </div>
+    <div class="form-group"><label>תאריך</label><input type="date" id="m-date" value="${currentMonth}-01"></div>
+    <div class="modal-actions">
+      <button class="btn" onclick="closeModal()">ביטול</button>
+      <button class="btn btn-primary" onclick="submitExpense()">שמור</button>
+    </div>
+  `);
+}
+
+async function submitExpense() {
+  const res = await fetch('/api/expenses/add', {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({
+      description: document.getElementById('m-desc').value,
+      amount: document.getElementById('m-amount').value,
+      category: document.getElementById('m-cat').value,
+      expense_date: document.getElementById('m-date').value
+    })
+  });
+  const d = await res.json();
+  if (d.ok) { closeModal(); location.reload(); }
+}
+</script>
+{% endblock %}

@@ -1,0 +1,331 @@
+{% extends "base.html" %}
+{% block title %}יומן{% endblock %}
+{% block content %}
+<div class="page-header">
+  <h1>יומן אירועים</h1>
+  <div class="btn-group">
+    <a href="?year={{ prev_year }}&month={{ prev_month }}" class="btn">‹ חודש קודם</a>
+    <span style="padding:7px 14px;font-size:14px;font-weight:500" id="month-label"></span>
+    <a href="?year={{ next_year }}&month={{ next_month }}" class="btn">חודש הבא ›</a>
+  </div>
+</div>
+
+<div class="metrics-grid" style="grid-template-columns:repeat(5,1fr);margin-bottom:1rem">
+  <div class="metric"><div class="metric-label">אירועים החודש</div><div class="metric-value" id="s-count">—</div></div>
+  <div class="metric"><div class="metric-label">שקיות לאירועים</div><div class="metric-value amber" id="s-bags">—</div><div class="metric-sub" id="s-bags-kg"></div></div>
+  <div class="metric"><div class="metric-label">🧧 מלאי זמין</div><div class="metric-value teal" id="s-stock">—</div><div class="metric-sub" id="s-stock-kg"></div></div>
+  <div class="metric"><div class="metric-label">הכנסות</div><div class="metric-value teal" id="s-revenue">—</div></div>
+  <div class="metric"><div class="metric-label">רווח נקי</div><div class="metric-value teal" id="s-profit">—</div></div>
+</div>
+
+<div class="card" style="padding:0;overflow:hidden">
+  <div style="display:grid;grid-template-columns:repeat(7,1fr);border-bottom:0.5px solid var(--color-border-tertiary)">
+    {% for day in ['ראשון','שני','שלישי','רביעי','חמישי','שישי','שבת'] %}
+    <div style="padding:8px;text-align:center;font-size:12px;font-weight:500;color:var(--color-text-secondary)">{{ day }}</div>
+    {% endfor %}
+  </div>
+  <div id="cal-grid" style="display:grid;grid-template-columns:repeat(7,1fr)"></div>
+</div>
+
+<div id="day-panel" style="display:none;margin-top:1rem">
+  <div class="card">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1rem">
+      <div id="day-title" style="font-size:16px;font-weight:500"></div>
+      <div class="btn-group">
+        <button class="btn btn-primary small" onclick="openAddForDay()">+ אירוע ליום זה</button>
+        <button class="btn small" onclick="closeDay()">✕ סגור</button>
+      </div>
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:1rem" id="day-metrics"></div>
+    <div id="day-events"></div>
+  </div>
+</div>
+
+<script>
+const EVENTS    = {{ events_json | tojson }};
+const FRIDGES   = {{ fridges_json | tojson }};
+const BAG_TYPES = {{ bag_types_json | tojson }};
+const YEAR      = {{ year }};
+const MONTH     = {{ month }};
+const TOTAL_STOCK    = {{ total_stock }};
+const TOTAL_STOCK_KG = {{ total_stock_kg|round(0)|int }};
+
+const HE_MONTHS    = ['','ינואר','פברואר','מרץ','אפריל','מאי','יוני','יולי','אוגוסט','ספטמבר','אוקטובר','נובמבר','דצמבר'];
+const STATUS_LABEL = {pending:'ממתין', active:'פעיל', done:'הושלם'};
+const STATUS_CLASS = {pending:'badge-pending', active:'badge-active', done:'badge-done'};
+let selectedDate = null;
+
+document.getElementById('month-label').textContent = `${HE_MONTHS[MONTH]} ${YEAR}`;
+
+const totalRevenue = EVENTS.reduce((s,e) => s + parseFloat(e.price||0), 0);
+const totalProfit  = EVENTS.reduce((s,e) => s + (parseFloat(e.price||0) - (e.quantity||0)*parseFloat(e.cost_per_unit||0)), 0);
+const totalBags = EVENTS.reduce((s,e) => s + (e.quantity||0), 0);
+const totalBagsKg = EVENTS.reduce((s,e) => s + (e.quantity||0) * parseFloat(e.bag_weight_kg||0), 0);
+document.getElementById('s-count').textContent   = EVENTS.length;
+document.getElementById('s-bags').textContent    = totalBags;
+if (totalBagsKg > 0) document.getElementById('s-bags-kg').textContent = totalBagsKg.toFixed(0) + ' ק"ג';
+document.getElementById('s-stock').textContent   = TOTAL_STOCK;
+if (TOTAL_STOCK_KG > 0) document.getElementById('s-stock-kg').textContent = TOTAL_STOCK_KG + ' ק"ג';
+else document.getElementById('s-stock-kg').textContent = 'כל המקררים';
+document.getElementById('s-revenue').textContent = '₪' + totalRevenue.toLocaleString('he-IL',{maximumFractionDigits:0});
+document.getElementById('s-profit').textContent  = '₪' + totalProfit.toLocaleString('he-IL',{maximumFractionDigits:0});
+
+// ── helpers ──
+function fridgeOptions(selectedId) {
+  return FRIDGES.map(f =>
+    `<option value="${f.id}" ${f.id===selectedId?'selected':''}>${f.name} (${f.quantity} שק׳)</option>`
+  ).join('');
+}
+
+function bagOptions(selectedId) {
+  return `<option value="">— בחר סוג שקית —</option>` +
+    BAG_TYPES.map(b =>
+      `<option value="${b.id}" data-weight="${b.weight_kg}" data-price="${b.price_per_kg}" data-cost="${b.cost_per_kg}" ${b.id===selectedId?'selected':''}>${b.name} (${b.weight_kg}קג)</option>`
+    ).join('');
+}
+
+function calcAll() {
+  const sel      = document.getElementById('m-bag-type');
+  const qty      = parseFloat(document.getElementById('m-qty')?.value)      || 0;
+  const delivery = parseFloat(document.getElementById('m-delivery')?.value) || 0;
+  const priceEl  = document.getElementById('m-price');
+  const costEl   = document.getElementById('m-cost');
+  if (sel && sel.value) {
+    const opt    = sel.options[sel.selectedIndex];
+    const weight = parseFloat(opt.dataset.weight) || 0;
+    if (priceEl) priceEl.value = Math.round(qty * weight * (parseFloat(opt.dataset.price)||0) + delivery);
+    if (costEl)  costEl.value  = (weight * (parseFloat(opt.dataset.cost)||0)).toFixed(2);
+  }
+  const price     = parseFloat(priceEl?.value) || 0;
+  const cost      = parseFloat(costEl?.value)  || 0;
+  const totalCost = qty * cost;
+  const profit    = price - totalCost;
+  const el = document.getElementById('m-profit-preview');
+  if (!el) return;
+  el.innerHTML = `
+    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;font-size:13px">
+      <div>עלות סה"כ: <strong>₪${totalCost.toFixed(0)}</strong></div>
+      <div>מחיר ללקוח: <strong>₪${price.toFixed(0)}</strong></div>
+      <div>משלוח: <strong>₪${delivery.toFixed(0)}</strong></div>
+      <div>רווח: <strong style="color:${profit>=0?'#1D9E75':'#D85A30'}">₪${profit.toFixed(0)} (${price>0?(profit/price*100).toFixed(0):0}%)</strong></div>
+    </div>`;
+}
+const autoCalc = calcAll;
+const updateProfit = calcAll;
+
+function eventForm(title, date, e) {
+  return `
+    <h2>${title}</h2>
+    <div class="form-group"><label>שם האירוע</label>
+      <input type="text" id="m-name" value="${(e?.name||'').replace(/"/g,'&quot;')}" placeholder="למשל: חתונה — רמת גן">
+    </div>
+    <div class="form-group"><label>כתובת האירוע</label>
+      <input type="text" id="m-address" value="${(e?.address||'').replace(/"/g,'&quot;')}" placeholder="רחוב, עיר">
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label>תאריך</label>
+        <input type="date" id="m-date" value="${date}">
+      </div>
+      <div class="form-group"><label>סטטוס</label>
+        <select id="m-status">
+          <option value="pending" ${(!e||e.status==='pending')?'selected':''}>ממתין</option>
+          <option value="active"  ${e?.status==='active' ?'selected':''}>פעיל</option>
+          <option value="done"    ${e?.status==='done'   ?'selected':''}>הושלם</option>
+        </select>
+      </div>
+    </div>
+    <div class="form-group"><label>מקרר</label>
+      <select id="m-fridge">
+        <option value="">— בחר מקרר —</option>
+        ${fridgeOptions(e?.fridge_id||null)}
+      </select>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label>סוג שקית</label>
+        <select id="m-bag-type" onchange="autoCalc()">${bagOptions(null)}</select>
+      </div>
+      <div class="form-group"><label>כמות שקיות</label>
+        <input type="number" id="m-qty" value="${e?.quantity||100}" min="1" oninput="autoCalc()">
+      </div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label>מחיר ללקוח (₪) <span style="font-size:11px;color:var(--color-text-secondary)">אוטומטי / ידני</span></label>
+        <input type="number" id="m-price" value="${e?.price||1000}" step="10" oninput="updateProfit()">
+      </div>
+      <div class="form-group"><label>מחיר משלוח (₪)</label>
+        <input type="number" id="m-delivery" value="${e?.delivery_fee||0}" step="5" oninput="autoCalc()">
+      </div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label>עלות לשקית (₪) <span style="font-size:11px;color:var(--color-text-secondary)">אוטומטי / ידני</span></label>
+        <input type="number" id="m-cost" value="${e?.cost_per_unit||3.5}" step="0.1" oninput="updateProfit()">
+      </div>
+      <div class="form-group"><label>הערות</label>
+        <input type="text" id="m-notes" value="${(e?.notes||'').replace(/"/g,'&quot;')}" placeholder="אופציונלי">
+      </div>
+    </div>
+    <div id="m-profit-preview" style="margin-top:8px;background:var(--color-background-secondary);padding:8px 10px;border-radius:8px"></div>`;
+}
+
+function getFormData() {
+  return {
+    name:          document.getElementById('m-name').value,
+    event_date:    document.getElementById('m-date').value,
+    address:       document.getElementById('m-address').value,
+    fridge_id:     document.getElementById('m-fridge').value || null,
+    quantity:      document.getElementById('m-qty').value,
+    price:         document.getElementById('m-price').value,
+    cost_per_unit: document.getElementById('m-cost').value,
+    delivery_fee:  document.getElementById('m-delivery').value,
+    status:        document.getElementById('m-status').value,
+    notes:         document.getElementById('m-notes').value
+  };
+}
+
+// ── גריד ──
+function buildGrid() {
+  const grid = document.getElementById('cal-grid');
+  grid.innerHTML = '';
+  const firstDay    = new Date(YEAR, MONTH-1, 1).getDay();
+  const daysInMonth = new Date(YEAR, MONTH, 0).getDate();
+  const today       = new Date().toISOString().split('T')[0];
+  const byDay = {};
+  EVENTS.forEach(e => {
+    const d = e.event_date.substring(0,10);
+    if (!byDay[d]) byDay[d] = [];
+    byDay[d].push(e);
+  });
+  for (let i = 0; i < firstDay; i++)
+    grid.insertAdjacentHTML('beforeend',`<div style="min-height:90px;border-left:0.5px solid var(--color-border-tertiary);border-bottom:0.5px solid var(--color-border-tertiary);background:var(--color-background-secondary);opacity:0.4"></div>`);
+  for (let d = 1; d <= daysInMonth; d++) {
+    const dateStr    = `${YEAR}-${String(MONTH).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+    const dayEvts    = byDay[dateStr] || [];
+    const isToday    = dateStr === today;
+    const isSelected = dateStr === selectedDate;
+    const dots = dayEvts.slice(0,3).map(e => {
+      const c = e.status==='done'?'#888':e.status==='active'?'#1D9E75':'#BA7517';
+      return `<div style="width:6px;height:6px;border-radius:50%;background:${c}"></div>`;
+    }).join('');
+    const pills = dayEvts.slice(0,2).map(e =>
+      `<div style="font-size:10px;padding:2px 5px;border-radius:4px;margin-bottom:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;background:${e.status==='done'?'#f1f0eb':e.status==='active'?'#E1F5EE':'#FAEEDA'};color:${e.status==='done'?'#5F5E5A':e.status==='active'?'#0F6E56':'#633806'}">${e.name}</div>`
+    ).join('') + (dayEvts.length > 2 ? `<div style="font-size:10px;color:var(--color-text-secondary)">+${dayEvts.length-2} עוד</div>` : '');
+    grid.insertAdjacentHTML('beforeend',`
+      <div id="cell-${dateStr}" onclick="openDay('${dateStr}',${d})"
+           style="min-height:90px;border-left:0.5px solid var(--color-border-tertiary);border-bottom:0.5px solid var(--color-border-tertiary);padding:6px;cursor:pointer;transition:background 0.1s;${isToday?'outline:2px solid #1D9E75;outline-offset:-2px;':''}${isSelected?'outline:2px solid #7F77DD;outline-offset:-2px;':''}"
+           onmouseenter="this.style.background='var(--color-background-secondary)'"
+           onmouseleave="this.style.background=''">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px">
+          <span style="font-size:13px;font-weight:${isToday?'600':'400'};color:${isToday?'#1D9E75':'var(--color-text-primary)'}">${d}</span>
+          ${dayEvts.length ? `<div style="display:flex;gap:2px">${dots}</div>` : ''}
+        </div>
+        ${pills}
+      </div>`);
+  }
+  const remainder = (firstDay + daysInMonth) % 7;
+  if (remainder > 0)
+    for (let i = 0; i < 7 - remainder; i++)
+      grid.insertAdjacentHTML('beforeend',`<div style="min-height:90px;border-left:0.5px solid var(--color-border-tertiary);border-bottom:0.5px solid var(--color-border-tertiary);background:var(--color-background-secondary);opacity:0.4"></div>`);
+}
+
+function openDay(dateStr, dayNum) {
+  selectedDate = dateStr;
+  buildGrid();
+  const dayEvts  = EVENTS.filter(e => e.event_date.substring(0,10) === dateStr);
+  const dayNames = ['ראשון','שני','שלישי','רביעי','חמישי','שישי','שבת'];
+  document.getElementById('day-title').textContent =
+    `יום ${dayNames[new Date(dateStr).getDay()]}, ${dayNum} ב${HE_MONTHS[MONTH]} ${YEAR}`;
+  const dayBags    = dayEvts.reduce((s,e) => s+(e.quantity||0), 0);
+  const dayRevenue = dayEvts.reduce((s,e) => s+parseFloat(e.price||0), 0);
+  document.getElementById('day-metrics').innerHTML = `
+    <div class="metric"><div class="metric-label">אירועים</div><div class="metric-value">${dayEvts.length}</div></div>
+    <div class="metric"><div class="metric-label">שקיות</div><div class="metric-value amber">${dayBags}</div></div>
+    <div class="metric"><div class="metric-label">הכנסות</div><div class="metric-value teal">₪${dayRevenue.toLocaleString('he-IL',{maximumFractionDigits:0})}</div></div>`;
+  if (!dayEvts.length) {
+    document.getElementById('day-events').innerHTML =
+      `<div class="muted" style="text-align:center;padding:1.5rem">אין אירועים — לחץ "+ אירוע ליום זה" להוספה</div>`;
+  } else {
+    document.getElementById('day-events').innerHTML = dayEvts.map(e => {
+      const profit = parseFloat(e.price||0) - (e.quantity||0)*parseFloat(e.cost_per_unit||0);
+      return `
+        <div style="display:flex;align-items:center;gap:12px;padding:10px 0;border-bottom:0.5px solid var(--color-border-tertiary)">
+          <span class="badge ${STATUS_CLASS[e.status]}">${STATUS_LABEL[e.status]}</span>
+          <div style="flex:1">
+            <div class="fw500">${e.name}</div>
+            <div class="muted small">${e.address||''}${e.fridge_name?' · '+e.fridge_name:''}</div>
+          </div>
+          <div style="text-align:left;min-width:80px">
+            <div class="fw500">₪${parseFloat(e.price).toLocaleString('he-IL',{maximumFractionDigits:0})}</div>
+            <div class="small ${profit>=0?'text-teal':'text-coral'}">רווח ₪${profit.toFixed(0)}</div>
+          </div>
+          <div class="muted small">${e.quantity} שק׳</div>
+          <button class="btn small" onclick="editEventCal(${e.id})">✏</button>
+          <button class="btn small" style="color:#D85A30" onclick="deleteEventCal(${e.id},'${(e.name||'').replace(/'/g,"\\'")}')">✕</button>
+        </div>`;
+    }).join('');
+  }
+  document.getElementById('day-panel').style.display = 'block';
+  document.getElementById('day-panel').scrollIntoView({behavior:'smooth', block:'nearest'});
+}
+
+function closeDay() {
+  selectedDate = null;
+  document.getElementById('day-panel').style.display = 'none';
+  buildGrid();
+}
+
+// ── הוספת אירוע ──
+function openAddForDay() {
+  showModal(eventForm(`אירוע חדש — ${selectedDate}`, selectedDate, null) + `
+    <div class="modal-actions">
+      <button class="btn" onclick="closeModal()">ביטול</button>
+      <button class="btn btn-primary" onclick="submitAddForDay()">שמור</button>
+    </div>`);
+  updateProfit();
+}
+
+async function submitAddForDay() {
+  const res = await fetch('/api/events/add', {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify(getFormData())
+  });
+  const d = await res.json();
+  if (d.ok) { closeModal(); location.reload(); }
+  else alert('שגיאה: ' + (d.error||'נסה שוב'));
+}
+
+// ── עריכה ──
+function editEventCal(eid) {
+  const e = EVENTS.find(x => x.id === eid);
+  if (!e) return;
+  showModal(eventForm('ערוך אירוע', e.event_date.substring(0,10), e) + `
+    <div class="modal-actions">
+      <button class="btn" onclick="closeModal()">ביטול</button>
+      <button class="btn btn-primary" onclick="submitEditEventCal(${eid})">שמור</button>
+    </div>`);
+  updateProfit();
+}
+
+async function submitEditEventCal(eid) {
+  const res = await fetch(`/api/events/${eid}/edit`, {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify(getFormData())
+  });
+  const d = await res.json();
+  if (d.ok) { closeModal(); location.reload(); }
+  else alert('שגיאה: ' + (d.error||'נסה שוב'));
+}
+
+// ── מחיקה ──
+async function deleteEventCal(eid, name) {
+  if (!confirm(`למחוק את "${name}"?`)) return;
+  const res = await fetch(`/api/events/${eid}/delete`, {
+    method:'POST', headers:{'Content-Type':'application/json'}
+  });
+  const d = await res.json();
+  if (d.ok) location.reload();
+  else alert('שגיאה: ' + (d.error||'נסה שוב'));
+}
+
+buildGrid();
+</script>
+{% endblock %}

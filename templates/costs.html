@@ -1,0 +1,320 @@
+{% extends "base.html" %}
+{% block title %}עלויות{% endblock %}
+{% block content %}
+<div class="page-header">
+  <h1>עלויות והגדרות מחירים</h1>
+  <div class="btn-group">
+    <button class="btn btn-primary" onclick="openAddBag()">+ סוג שקית</button>
+    <button class="btn" onclick="openAddExpense()">+ הוצאה</button>
+  </div>
+</div>
+
+<!-- סוגי שקיות -->
+<div class="card" style="margin-bottom:1rem">
+  <div class="card-title">סוגי שקיות — מחירים</div>
+  <table class="table">
+    <thead>
+      <tr>
+        <th>סוג</th>
+        <th>משקל (ק"ג)</th>
+        <th style="color:#185FA5">עלות שלי לק"ג (₪)</th>
+        <th style="color:#1D9E75">מחיר ללקוח לק"ג (₪)</th>
+        <th>משלוח (₪)</th>
+        <th style="color:#185FA5">עלות שלי לשקית</th>
+        <th style="color:#1D9E75">מחיר ללקוח לשקית</th>
+        <th>מרג'ין</th>
+        <th>פעולות</th>
+      </tr>
+    </thead>
+    <tbody>
+    {% for b in bag_types %}
+    {% set cost_unit  = b.weight_kg * b.cost_per_kg %}
+    {% set price_unit = b.weight_kg * b.price_per_kg %}
+    {% set margin     = ((price_unit - cost_unit) / price_unit * 100)|round(1) if price_unit > 0 else 0 %}
+    <tr>
+      <td class="fw500">{{ b.name }}</td>
+      <td>{{ b.weight_kg }}</td>
+      <td>₪{{ b.cost_per_kg }}</td>
+      <td>₪{{ b.price_per_kg }}</td>
+      <td>₪{{ b.delivery_fee }}</td>
+      <td class="muted">₪{{ "%.2f"|format(cost_unit) }}</td>
+      <td class="fw500">₪{{ "%.2f"|format(price_unit) }}</td>
+      <td class="{% if margin >= 40 %}text-teal{% elif margin >= 20 %}text-amber{% else %}text-coral{% endif %} fw500">
+        {{ margin }}%
+      </td>
+      <td>
+        <button class="btn small" onclick="editBag({{ b.id }})">✏ ערוך</button>
+        <button class="btn small" style="color:#D85A30" onclick="deleteBag({{ b.id }}, '{{ b.name }}')">✕</button>
+      </td>
+    </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<!-- מחשבון הזמנה -->
+<div class="card" style="margin-bottom:1rem">
+  <div class="card-title">מחשבון הזמנה</div>
+  <div style="display:grid;grid-template-columns:repeat(4,1fr) auto;gap:12px;align-items:end">
+    <div class="form-group" style="margin:0">
+      <label class="form-label">סוג שקית</label>
+      <select id="calc-bag">
+        {% for b in bag_types %}
+        <option value="{{ b.id }}" data-cost="{{ b.cost_per_kg }}" data-price="{{ b.price_per_kg }}"
+                data-weight="{{ b.weight_kg }}" data-delivery="{{ b.delivery_fee }}">{{ b.name }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="form-group" style="margin:0">
+      <label class="form-label">כמות שקיות</label>
+      <input type="number" id="calc-qty" value="100" min="1" oninput="calcLive()">
+    </div>
+    <div class="form-group" style="margin:0">
+      <label class="form-label">מחיר משלוח (₪)</label>
+      <input type="number" id="calc-delivery" value="0" min="0" step="5" oninput="calcLive()">
+    </div>
+    <div id="calc-result" style="background:var(--color-background-secondary);border-radius:var(--border-radius-md);padding:10px 14px;font-size:13px;line-height:1.8">
+      —
+    </div>
+  </div>
+</div>
+
+<!-- סיכום הוצאות החודש -->
+<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:1rem">
+  <div class="card">
+    <div class="card-title">הוצאות החודש לפי קטגוריה</div>
+    {% if totals %}
+    {% for t in totals %}
+    <div class="profit-row">
+      <span>{{ {'supply':'ספק / קרח','logistics':'לוגיסטיקה','maintenance':'אחזקה','general':'כללי'}.get(t.category, t.category) }}</span>
+      <span class="fw500 text-coral">₪{{ "{:,.0f}".format(t.total) }}</span>
+    </div>
+    {% endfor %}
+    {% else %}
+    <div class="muted small">אין הוצאות החודש</div>
+    {% endif %}
+  </div>
+
+  <div class="card">
+    <div class="card-title">הוצאות לפי חודש</div>
+    {% for m in monthly %}
+    <div class="profit-row">
+      <span class="muted">{{ m.month }}</span>
+      <span class="fw500">₪{{ "{:,.0f}".format(m.total) }}</span>
+    </div>
+    {% endfor %}
+  </div>
+</div>
+
+<!-- היסטוריית הוצאות -->
+<div class="card">
+  <div class="card-title">היסטוריית הוצאות</div>
+  <table class="table">
+    <thead>
+      <tr><th>תאריך</th><th>תיאור</th><th>קטגוריה</th><th>סכום</th><th></th></tr>
+    </thead>
+    <tbody>
+    {% for ex in expense_list %}
+    <tr>
+      <td class="muted small">{{ ex.expense_date }}</td>
+      <td>{{ ex.description }}</td>
+      <td><span class="badge badge-pending">
+        {{ {'supply':'ספק / קרח','logistics':'לוגיסטיקה','maintenance':'אחזקה','general':'כללי'}.get(ex.category, ex.category) }}
+      </span></td>
+      <td class="fw500 text-coral">₪{{ "{:,.0f}".format(ex.amount) }}</td>
+      <td>
+        <button class="btn small" style="color:#D85A30" onclick="deleteExpense({{ ex.id }})">✕</button>
+      </td>
+    </tr>
+    {% endfor %}
+    {% if not expense_list %}
+    <tr><td colspan="5" class="muted" style="text-align:center;padding:1rem">אין הוצאות רשומות</td></tr>
+    {% endif %}
+    </tbody>
+  </table>
+</div>
+
+<script>
+const bagTypes = {{ bag_types_json | tojson }};
+
+// מחשבון חי
+function calcLive() {
+  const sel = document.getElementById('calc-bag');
+  const opt = sel.options[sel.selectedIndex];
+  const qty      = parseFloat(document.getElementById('calc-qty').value) || 0;
+  const delivery = parseFloat(document.getElementById('calc-delivery').value) || 0;
+  const weight   = parseFloat(opt.dataset.weight);
+  const costKg   = parseFloat(opt.dataset.cost);
+  const priceKg  = parseFloat(opt.dataset.price);
+  const totalCost  = qty * weight * costKg;
+  const totalPrice = qty * weight * priceKg + delivery;
+  const profit  = totalPrice - totalCost;
+  const margin  = totalPrice > 0 ? (profit / totalPrice * 100).toFixed(1) : 0;
+  document.getElementById('calc-result').innerHTML = `
+    <div>עלות: <strong>₪${totalCost.toFixed(0)}</strong></div>
+    <div>מחיר ללקוח: <strong>₪${totalPrice.toFixed(0)}</strong></div>
+    <div>רווח: <strong style="color:${profit>=0?'#1D9E75':'#D85A30'}">₪${profit.toFixed(0)} (${margin}%)</strong></div>
+    ${delivery > 0 ? `<div class="muted">כולל משלוח ₪${delivery.toFixed(0)}</div>` : ''}
+  `;
+}
+document.getElementById('calc-bag').addEventListener('change', calcLive);
+calcLive();
+
+// ── סוגי שקיות ──
+function editBag(bid) {
+  const b = bagTypes.find(x => x.id === bid);
+  if (!b) return;
+  showModal(`
+    <h2>ערוך סוג שקית</h2>
+    <div class="form-group"><label>שם</label><input type="text" id="m-name" value="${b.name}"></div>
+    <div class="form-row">
+      <div class="form-group"><label>משקל (ק"ג)</label><input type="number" id="m-weight" value="${b.weight_kg}" step="0.5"></div>
+      <div class="form-group"><label style="color:#185FA5;font-weight:500">עלות שלי לק"ג (₪)</label><input type="number" id="m-cost" value="${b.cost_per_kg}" step="0.1" style="border-color:#185FA5"></div>
+    </div>
+    <div class="form-group"><label style="color:#1D9E75;font-weight:500">מחיר ללקוח לק"ג (₪)</label><input type="number" id="m-price" value="${b.price_per_kg}" step="0.1" style="border-color:#1D9E75"></div>
+    <div id="m-margin" style="margin-top:8px"></div>
+    <div class="modal-actions">
+      <button class="btn" onclick="closeModal()">ביטול</button>
+      <button class="btn btn-primary" onclick="submitEditBag(${bid})">שמור</button>
+    </div>
+  `);
+  ['m-cost','m-price','m-weight'].forEach(id =>
+    document.getElementById(id).addEventListener('input', updateBagMargin)
+  );
+  updateBagMargin();
+}
+
+function updateBagMargin() {
+  const w = parseFloat(document.getElementById('m-weight').value)||0;
+  const c = parseFloat(document.getElementById('m-cost').value)||0;
+  const p = parseFloat(document.getElementById('m-price').value)||0;
+  const costU  = w * c;
+  const priceU = w * p;
+  const margin = priceU > 0 ? ((priceU-costU)/priceU*100).toFixed(1) : 0;
+  document.getElementById('m-margin').innerHTML = `
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:6px">
+      <div style="background:#E6F1FB;border-radius:8px;padding:8px 10px">
+        <div style="color:#185FA5;font-size:11px;font-weight:500">עלות שלי לשקית</div>
+        <div style="color:#0C447C;font-size:16px;font-weight:600">₪${costU.toFixed(2)}</div>
+      </div>
+      <div style="background:#E1F5EE;border-radius:8px;padding:8px 10px">
+        <div style="color:#0F6E56;font-size:11px;font-weight:500">מחיר ללקוח לשקית</div>
+        <div style="color:#085041;font-size:16px;font-weight:600">₪${priceU.toFixed(2)}</div>
+      </div>
+    </div>
+    <div style="background:${parseFloat(margin)>=40?'#E1F5EE':parseFloat(margin)>=20?'#FAEEDA':'#FCEBEB'};border-radius:8px;padding:8px 12px;display:flex;justify-content:space-between">
+      <span style="font-size:12px">מרג'ין</span>
+      <span style="font-weight:600;font-size:15px">${margin}%</span>
+    </div>`;
+}
+
+async function submitEditBag(bid) {
+  const res = await fetch(`/api/bag_types/${bid}/edit`, {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({
+      name:         document.getElementById('m-name').value,
+      weight_kg:    document.getElementById('m-weight').value,
+      cost_per_kg:  document.getElementById('m-cost').value,
+      price_per_kg: document.getElementById('m-price').value,
+      delivery_fee: document.getElementById('m-delivery').value
+    })
+  });
+  const d = await res.json();
+  if (d.ok) { closeModal(); location.reload(); }
+  else alert('שגיאה: ' + d.error);
+}
+
+function openAddBag() {
+  showModal(`
+    <h2>סוג שקית חדש</h2>
+    <div class="form-group"><label>שם</label><input type="text" id="m-name" placeholder="למשל: שקית 5 קילו"></div>
+    <div class="form-row">
+      <div class="form-group"><label>משקל (ק"ג)</label><input type="number" id="m-weight" value="5" step="0.5"></div>
+      <div class="form-group"><label style="color:#185FA5;font-weight:500">עלות שלי לק"ג (₪)</label><input type="number" id="m-cost" value="3.5" step="0.1" style="border-color:#185FA5"></div>
+    </div>
+    <div class="form-group"><label style="color:#1D9E75;font-weight:500">מחיר ללקוח לק"ג (₪)</label><input type="number" id="m-price" value="7" step="0.1" style="border-color:#1D9E75"></div>
+    <div id="m-margin" style="margin-top:8px"></div>
+    <div class="modal-actions">
+      <button class="btn" onclick="closeModal()">ביטול</button>
+      <button class="btn btn-primary" onclick="submitAddBag()">שמור</button>
+    </div>
+  `);
+  ['m-cost','m-price','m-weight'].forEach(id =>
+    document.getElementById(id).addEventListener('input', updateBagMargin)
+  );
+  updateBagMargin();
+}
+
+async function submitAddBag() {
+  const res = await fetch('/api/bag_types/add', {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({
+      name:         document.getElementById('m-name').value,
+      weight_kg:    document.getElementById('m-weight').value,
+      cost_per_kg:  document.getElementById('m-cost').value,
+      price_per_kg: document.getElementById('m-price').value,
+      delivery_fee: 0
+    })
+  });
+  const d = await res.json();
+  if (d.ok) { closeModal(); location.reload(); }
+}
+
+async function deleteBag(bid, name) {
+  if (!confirm(`למחוק את "${name}"?`)) return;
+  const res = await fetch(`/api/bag_types/${bid}/delete`, {
+    method:'POST', headers:{'Content-Type':'application/json'}
+  });
+  const d = await res.json();
+  if (d.ok) location.reload();
+}
+
+// ── הוצאות ──
+function openAddExpense() {
+  const today = new Date().toISOString().split('T')[0];
+  showModal(`
+    <h2>הוצאה חדשה</h2>
+    <div class="form-group"><label>תיאור</label><input type="text" id="m-desc" placeholder="למשל: דלק משלוחים"></div>
+    <div class="form-row">
+      <div class="form-group"><label>סכום (₪)</label><input type="number" id="m-amount" value="0" step="10"></div>
+      <div class="form-group"><label>קטגוריה</label>
+        <select id="m-cat">
+          <option value="supply">ספק / קרח</option>
+          <option value="logistics">לוגיסטיקה</option>
+          <option value="maintenance">אחזקה</option>
+          <option value="general">כללי</option>
+        </select>
+      </div>
+    </div>
+    <div class="form-group"><label>תאריך</label><input type="date" id="m-date" value="${today}"></div>
+    <div class="modal-actions">
+      <button class="btn" onclick="closeModal()">ביטול</button>
+      <button class="btn btn-primary" onclick="submitExpense()">שמור</button>
+    </div>
+  `);
+}
+
+async function submitExpense() {
+  const res = await fetch('/api/expenses/add', {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({
+      description:  document.getElementById('m-desc').value,
+      amount:       document.getElementById('m-amount').value,
+      category:     document.getElementById('m-cat').value,
+      expense_date: document.getElementById('m-date').value
+    })
+  });
+  const d = await res.json();
+  if (d.ok) { closeModal(); location.reload(); }
+}
+
+async function deleteExpense(eid) {
+  if (!confirm('למחוק הוצאה זו?')) return;
+  const res = await fetch(`/api/expenses/delete/${eid}`, {
+    method:'POST', headers:{'Content-Type':'application/json'}
+  });
+  const d = await res.json();
+  if (d.ok) location.reload();
+}
+</script>
+{% endblock %}

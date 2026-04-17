@@ -1,0 +1,352 @@
+{% extends "base.html" %}
+{% block title %}אירועים{% endblock %}
+{% block content %}
+<div class="page-header">
+  <h1>אירועים</h1>
+  <button class="btn btn-primary" onclick="openAddEvent()">+ אירוע חדש</button>
+</div>
+
+<div class="filter-bar" style="flex-wrap:wrap;gap:6px">
+  <div style="display:flex;gap:4px">
+    <a href="?status=all&user={{ user_filter }}&time={{ time_filter }}"    class="btn {% if status_filter=='all' %}active{% endif %}">הכל</a>
+    <a href="?status=pending&user={{ user_filter }}&time={{ time_filter }}" class="btn {% if status_filter=='pending' %}active{% endif %}">ממתינים</a>
+    <a href="?status=active&user={{ user_filter }}&time={{ time_filter }}"  class="btn {% if status_filter=='active' %}active{% endif %}">פעילים</a>
+    <a href="?status=done&user={{ user_filter }}&time={{ time_filter }}"    class="btn {% if status_filter=='done' %}active{% endif %}">הושלמו</a>
+  </div>
+  <div style="width:1px;background:var(--color-border-tertiary);margin:0 2px"></div>
+  <div style="display:flex;gap:4px;align-items:center">
+    <a href="?status={{ status_filter }}&user=all&time={{ time_filter }}" class="btn {% if user_filter=='all' %}active{% endif %}">כללי</a>
+    <a href="?status={{ status_filter }}&user={{ me.id }}&time={{ time_filter }}" class="btn {% if user_filter==me.id|string %}active{% endif %}" style="{% if user_filter==me.id|string %}background:{{ me.color }};color:#fff;border-color:{{ me.color }};{% endif %}">שלי</a>
+    {% for u in all_users %}{% if u.id != me.id %}
+    <a href="?status={{ status_filter }}&user={{ u.id }}&time={{ time_filter }}" class="btn {% if user_filter==u.id|string %}active{% endif %}" style="{% if user_filter==u.id|string %}background:{{ u.color }};color:#fff;border-color:{{ u.color }};{% endif %}">של {{ u.display_name }}</a>
+    {% endif %}{% endfor %}
+  </div>
+  <div style="width:1px;background:var(--color-border-tertiary);margin:0 2px"></div>
+  <div style="display:flex;gap:4px">
+    <a href="?status={{ status_filter }}&user={{ user_filter }}&time=all"    class="btn {% if time_filter=='all' %}active{% endif %}">כל הזמנים</a>
+    <a href="?status={{ status_filter }}&user={{ user_filter }}&time=today"   class="btn {% if time_filter=='today' %}active{% endif %}">היום</a>
+    <a href="?status={{ status_filter }}&user={{ user_filter }}&time=week"    class="btn {% if time_filter=='week' %}active{% endif %}">השבוע</a>
+    <a href="?status={{ status_filter }}&user={{ user_filter }}&time=month"   class="btn {% if time_filter=='month' %}active{% endif %}">החודש</a>
+    <a href="?status={{ status_filter }}&user={{ user_filter }}&time=future"  class="btn {% if time_filter=='future' %}active{% endif %}">עתידים</a>
+  </div>
+</div>
+
+{% if events %}
+{# ── אירועים שלי ── #}
+{% set my_events = events | selectattr('created_by', 'equalto', me.id) | list %}
+{% set other_events = events | rejectattr('created_by', 'equalto', me.id) | list %}
+
+{% if my_events %}
+<div class="card" style="margin-bottom:1rem">
+  <div class="card-title" style="color:{{ me.color }}">האירועים שלי</div>
+  <table class="table">
+    <thead>
+      <tr>
+        <th>סטטוס</th>
+        <th>שם האירוע</th>
+        <th>תאריך</th>
+        <th>כתובת</th>
+        <th>מקרר</th>
+        <th>כמות</th>
+        <th style="color:#185FA5">סוג שקית</th>
+        <th style="color:#185FA5">סה"כ ק"ג</th>
+        <th style="color:#1D9E75">מחיר ללקוח</th>
+        <th>משלוח</th>
+        <th style="color:#185FA5">עלות שלי</th>
+        <th>רווח</th>
+        <th>פעולות</th>
+      </tr>
+    </thead>
+    <tbody>
+    {% for e in my_events %}
+    <tr id="row-{{ e.id }}">
+      <td><span class="badge badge-{{ e.status }}">{{ {'pending':'ממתין','active':'פעיל','done':'הושלם'}[e.status] }}</span></td>
+      <td class="fw500">{{ e.name }}</td>
+      <td class="muted">{{ e.event_date }}</td>
+      <td class="muted small">{{ e.address or '—' }}</td>
+      <td class="muted">{{ e.fridge_name or '—' }}</td>
+      <td>{{ e.quantity }}</td>
+      <td class="small" style="color:#185FA5">{{ e.bag_type_name or '—' }}</td>
+      <td class="small fw500" style="color:#185FA5">{% if e.bag_weight_kg %}{{ "{:.0f}".format(e.quantity * e.bag_weight_kg) }} ק"ג{% else %}—{% endif %}</td>
+      <td class="fw500" style="color:#1D9E75">₪{{ "{:,.0f}".format(e.price) }}</td>
+      <td class="muted small">₪{{ "{:,.0f}".format(e.delivery_fee or 0) }}</td>
+      <td class="small" style="color:#185FA5">₪{{ "{:,.0f}".format(e.quantity * e.cost_per_unit) }}</td>
+      <td class="{% if (e.price - e.quantity*e.cost_per_unit) > 0 %}text-teal{% else %}text-coral{% endif %} fw500">₪{{ "{:,.0f}".format(e.price - e.quantity * e.cost_per_unit) }}</td>
+      <td style="white-space:nowrap">
+        {% if e.status != 'done' %}
+        <button class="btn small" onclick="setStatus({{ e.id }}, 'active')">פעיל</button>
+        <button class="btn small btn-primary" onclick="setStatus({{ e.id }}, 'done')">✓ הושלם</button>
+        {% else %}<span class="muted small">✓</span>{% endif %}
+        <button class="btn small" onclick="editEvent({{ e.id }})">✏ ערוך</button>
+        <button class="btn small" style="color:#D85A30" onclick="deleteEvent({{ e.id }})">✕ מחק</button>
+      </td>
+    </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
+
+{% if other_events %}
+<div class="card">
+  <div class="card-title" style="color:#888">אירועים של שותפים</div>
+  <table class="table">
+    <thead>
+      <tr>
+        <th>מי</th>
+        <th>סטטוס</th>
+        <th>שם האירוע</th>
+        <th>תאריך</th>
+        <th>מקרר</th>
+        <th>כמות</th>
+        <th style="color:#185FA5">סוג שקית</th>
+        <th style="color:#185FA5">סה"כ ק"ג</th>
+        <th>פרטים</th>
+      </tr>
+    </thead>
+    <tbody>
+    {% for e in other_events %}
+    <tr>
+      <td>
+        <div title="{{ e.creator_name }}" style="width:24px;height:24px;border-radius:50%;background:{{ e.creator_color or '#ccc' }};display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:600;color:#fff">{{ (e.creator_name or '?')[0] }}</div>
+      </td>
+      <td><span class="badge badge-{{ e.status }}">{{ {'pending':'ממתין','active':'פעיל','done':'הושלם'}[e.status] }}</span></td>
+      <td class="fw500">{{ e.name }}</td>
+      <td class="muted">{{ e.event_date }}</td>
+      <td class="muted">{{ e.fridge_name or '—' }}</td>
+      <td class="fw500">{{ e.quantity }}</td>
+      <td class="small" style="color:#185FA5">{{ e.bag_type_name or '—' }}</td>
+      <td class="small fw500" style="color:#185FA5">{% if e.bag_weight_kg %}{{ "{:.0f}".format(e.quantity * e.bag_weight_kg) }} ק"ג{% else %}—{% endif %}</td>
+      <td><button class="btn small" onclick="viewEvent({{ e.id }})">👁 פרטים</button></td>
+    </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
+
+{% else %}
+<div class="card"><div class="muted" style="text-align:center;padding:2rem">אין אירועים לפי הסינון הנוכחי</div></div>
+{% endif %}
+
+<script>
+const ME_ID      = {{ me.id }};
+const fridges    = {{ fridges_json | tojson }};
+const eventsData = {{ events_json | tojson }};
+const BAG_TYPES  = {{ bag_types_json | tojson }};
+
+function bagOptions(selectedId) {
+  return `<option value="">— בחר סוג שקית —</option>` +
+    BAG_TYPES.map(b =>
+      `<option value="${b.id}" data-weight="${b.weight_kg}" data-price="${b.price_per_kg}" data-cost="${b.cost_per_kg}" ${b.id===selectedId?'selected':''}>${b.name} — עלות ₪${(b.weight_kg*b.cost_per_kg).toFixed(2)} | מחיר ₪${(b.weight_kg*b.price_per_kg).toFixed(2)}</option>`
+    ).join('');
+}
+
+function calcAll() {
+  const sel = document.getElementById('m-bag-type');
+  const qty = parseFloat(document.getElementById('m-qty')?.value) || 0;
+  const delivery = parseFloat(document.getElementById('m-delivery')?.value) || 0;
+  const priceEl = document.getElementById('m-price');
+  const costEl  = document.getElementById('m-cost');
+  if (sel && sel.value) {
+    const opt = sel.options[sel.selectedIndex];
+    const w = parseFloat(opt.dataset.weight) || 0;
+    const costKg  = parseFloat(opt.dataset.cost)  || 0;
+    const priceKg = parseFloat(opt.dataset.price) || 0;
+    // עלות — תמיד מחשבים לפי סוג שקית
+    if (costEl) costEl.value = (w * costKg).toFixed(2);
+    // מחיר — מחשבים רק אם ריק
+    if (priceEl && (!priceEl.value || parseFloat(priceEl.value) === 0))
+      priceEl.value = Math.round(qty * w * priceKg + delivery);
+  }
+  const price = parseFloat(priceEl?.value) || 0;
+  const cost  = parseFloat(costEl?.value)  || 0;
+  const iceTotal = qty * cost;
+  const totalIncome = price + delivery;
+  const profit = totalIncome - iceTotal;
+  const el = document.getElementById('m-profit-preview');
+  if (!el) return;
+  el.innerHTML = `
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:8px">
+      <div style="background:#E1F5EE;border-radius:8px;padding:10px 12px">
+        <div style="color:#0F6E56;font-size:11px;font-weight:500;margin-bottom:4px">💰 הכנסה מהלקוח</div>
+        <div style="color:#085041;font-weight:600;font-size:18px">₪${totalIncome.toFixed(0)}</div>
+        <div style="color:#0F6E56;font-size:11px;margin-top:3px">
+          קרח ₪${price.toFixed(0)}${delivery > 0 ? ` + משלוח ₪${delivery.toFixed(0)}` : ''}
+        </div>
+      </div>
+      <div style="background:#E6F1FB;border-radius:8px;padding:10px 12px">
+        <div style="color:#185FA5;font-size:11px;font-weight:500;margin-bottom:4px">📦 עלות שלי</div>
+        <div style="color:#0C447C;font-weight:600;font-size:18px">₪${iceTotal.toFixed(0)}</div>
+        <div style="color:#185FA5;font-size:11px;margin-top:3px">₪${cost.toFixed(2)} × ${qty} שקיות</div>
+      </div>
+    </div>
+    <div style="background:${profit>=0?'#E1F5EE':'#FCEBEB'};border-radius:8px;padding:10px 14px;display:flex;justify-content:space-between;align-items:center">
+      <span style="font-size:13px;color:${profit>=0?'#0F6E56':'#A32D2D'};font-weight:500">רווח צפוי</span>
+      <span style="font-weight:600;font-size:18px;color:${profit>=0?'#085041':'#791F1F'}">₪${profit.toFixed(0)} (${totalIncome>0?(profit/totalIncome*100).toFixed(0):0}%)</span>
+    </div>`;
+}
+
+function buildForm(d) {
+  d = d || {};
+  return `
+    <div class="form-group"><label>שם האירוע</label>
+      <input type="text" id="m-name" value="${(d.name||'').replace(/"/g,'&quot;')}" placeholder="למשל: חתונה — רמת גן">
+    </div>
+    <div class="form-group"><label>כתובת האירוע</label>
+      <input type="text" id="m-address" value="${(d.address||'').replace(/"/g,'&quot;')}" placeholder="רחוב, עיר">
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label>תאריך</label><input type="date" id="m-date" value="${d.date||''}"></div>
+      <div class="form-group"><label>סטטוס</label>
+        <select id="m-status">
+          <option value="pending" ${(d.status||'pending')==='pending'?'selected':''}>ממתין</option>
+          <option value="active"  ${d.status==='active'?'selected':''}>פעיל</option>
+          <option value="done"    ${d.status==='done'?'selected':''}>הושלם</option>
+        </select>
+      </div>
+    </div>
+    <div class="form-group"><label>מקרר</label>
+      <select id="m-fridge">
+        <option value="">— בחר מקרר —</option>
+        ${fridges.map(f=>`<option value="${f.id}" ${f.id===d.fridge_id?'selected':''}>${f.name} (${f.quantity} שק׳)</option>`).join('')}
+      </select>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label>סוג שקית</label>
+        <select id="m-bag-type" onchange="calcAll()">${bagOptions(d.bag_type_id||null)}</select>
+      </div>
+      <div class="form-group"><label>כמות שקיות</label>
+        <input type="number" id="m-qty" value="${d.quantity||100}" min="1" oninput="calcAll()">
+      </div>
+    </div>
+    <hr style="border:none;border-top:0.5px solid var(--color-border-tertiary);margin:8px 0">
+    <div class="form-row">
+      <div class="form-group">
+        <label style="color:#1D9E75;font-weight:500">💰 מחיר ללקוח (₪)</label>
+        <input type="number" id="m-price" value="${d.price||''}" step="10" oninput="calcAll()" style="border-color:#1D9E75;border-width:1.5px">
+      </div>
+      <div class="form-group"><label>משלוח ללקוח (₪)</label>
+        <input type="number" id="m-delivery" value="${d.delivery_fee||0}" step="5" oninput="calcAll()">
+      </div>
+    </div>
+    <div class="form-row">
+      <div class="form-group">
+        <label style="color:#185FA5;font-weight:500">📦 עלות שלי לשקית (₪)</label>
+        <input type="number" id="m-cost" value="${d.cost_per_unit||''}" step="0.1" oninput="calcAll()" style="border-color:#185FA5;border-width:1.5px">
+      </div>
+      <div class="form-group"><label>הערות</label>
+        <input type="text" id="m-notes" value="${(d.notes||'').replace(/"/g,'&quot;')}" placeholder="אופציונלי">
+      </div>
+    </div>
+    <div id="m-profit-preview" style="margin-top:10px"></div>`;
+}
+
+function getFormData() {
+  return {
+    name:          document.getElementById('m-name').value,
+    event_date:    document.getElementById('m-date').value,
+    address:       document.getElementById('m-address').value,
+    fridge_id:     document.getElementById('m-fridge').value || null,
+    bag_type_id:   document.getElementById('m-bag-type')?.value || null,
+    quantity:      document.getElementById('m-qty').value,
+    price:         document.getElementById('m-price').value,
+    cost_per_unit: document.getElementById('m-cost').value,
+    delivery_fee:  document.getElementById('m-delivery').value,
+    status:        document.getElementById('m-status').value,
+    notes:         document.getElementById('m-notes').value
+  };
+}
+
+function openAddEvent() {
+  const today = new Date().toISOString().split('T')[0];
+  showModal(`<h2>אירוע חדש</h2>${buildForm({date:today})}
+    <div class="modal-actions">
+      <button class="btn" onclick="closeModal()">ביטול</button>
+      <button class="btn btn-primary" onclick="submitEvent()">שמור</button>
+    </div>`);
+  calcAll();
+}
+
+async function submitEvent() {
+  const res = await fetch('/api/events/add', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(getFormData())});
+  const d = await res.json();
+  if (d.ok) { closeModal(); location.reload(); } else alert('שגיאה: '+(d.error||'נסה שוב'));
+}
+
+function editEvent(eid) {
+  const e = eventsData.find(x=>x.id===eid);
+  if (!e || e.created_by !== ME_ID) return;
+  showModal(`<h2>ערוך אירוע</h2>${buildForm({
+    name:e.name, address:e.address, date:(e.event_date||'').substring(0,10),
+    status:e.status, fridge_id:e.fridge_id, bag_type_id:e.bag_type_id,
+    quantity:e.quantity, price:e.price, cost_per_unit:e.cost_per_unit,
+    delivery_fee:e.delivery_fee, notes:e.notes
+  })}
+    <div class="modal-actions">
+      <button class="btn" onclick="closeModal()">ביטול</button>
+      <button class="btn btn-primary" onclick="submitEditEvent(${eid})">שמור</button>
+    </div>`);
+  calcAll();
+}
+
+async function submitEditEvent(eid) {
+  const res = await fetch(`/api/events/${eid}/edit`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(getFormData())});
+  const d = await res.json();
+  if (d.ok) { closeModal(); location.reload(); } else alert('שגיאה: '+(d.error||'נסה שוב'));
+}
+
+function viewEvent(eid) {
+  const e = eventsData.find(x=>x.id===eid);
+  if (!e) return;
+  const STATUS = {pending:'ממתין',active:'פעיל',done:'הושלם'};
+  const fridge = fridges.find(f=>f.id===e.fridge_id);
+  showModal(`
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:1rem">
+      <div style="width:36px;height:36px;border-radius:50%;background:${e.creator_color||'#ccc'};display:flex;align-items:center;justify-content:center;font-size:15px;font-weight:600;color:#fff">${(e.creator_name||'?')[0]}</div>
+      <div>
+        <div style="font-size:16px;font-weight:600">${e.name}</div>
+        <div style="font-size:12px;color:#888">אירוע של ${e.creator_name||'לא ידוע'}</div>
+      </div>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px">
+      <div style="background:var(--color-background-secondary);border-radius:8px;padding:10px">
+        <div style="font-size:11px;color:#888;margin-bottom:2px">תאריך</div>
+        <div style="font-weight:500">${(e.event_date||'').substring(0,10)}</div>
+      </div>
+      <div style="background:var(--color-background-secondary);border-radius:8px;padding:10px">
+        <div style="font-size:11px;color:#888;margin-bottom:2px">סטטוס</div>
+        <span class="badge badge-${e.status}">${STATUS[e.status]}</span>
+      </div>
+      <div style="background:#E6F1FB;border-radius:8px;padding:10px">
+        <div style="font-size:11px;color:#185FA5;margin-bottom:2px">🧊 מקרר</div>
+        <div style="font-weight:600;color:#0C447C">${fridge?fridge.name:'—'}</div>
+        <div style="font-size:11px;color:#185FA5">${fridge?'יתרה '+fridge.quantity+' שקיות':''}</div>
+      </div>
+      <div style="background:#E6F1FB;border-radius:8px;padding:10px">
+        <div style="font-size:11px;color:#185FA5;margin-bottom:2px">📦 כמות</div>
+        <div style="font-weight:600;font-size:18px;color:#0C447C">${e.quantity} שק׳</div>
+        ${e.bag_weight_kg?`<div style="font-size:11px;color:#185FA5">סה"כ ${(e.quantity*e.bag_weight_kg).toFixed(0)} ק"ג</div>`:''}
+      </div>
+    </div>
+    ${e.bag_type_name?`<div style="background:#E6F1FB;color:#185FA5;padding:8px 10px;border-radius:8px;font-size:13px;margin-bottom:8px">🧇 סוג שקית: <strong>${e.bag_type_name}</strong></div>`:''}
+    ${e.address?`<div style="font-size:13px;color:#888;margin-bottom:8px">📍 ${e.address}</div>`:''}
+    ${e.notes?`<div style="font-size:13px;color:#888;background:var(--color-background-secondary);padding:8px 10px;border-radius:8px">💬 ${e.notes}</div>`:''}
+    <div class="modal-actions"><button class="btn btn-primary" onclick="closeModal()">סגור</button></div>`);
+}
+
+async function setStatus(eid, status) {
+  const res = await fetch(`/api/events/${eid}/status`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({status})});
+  const d = await res.json();
+  if (d.ok) location.reload(); else alert('שגיאה: '+d.error);
+}
+
+async function deleteEvent(eid) {
+  const e = eventsData.find(x=>x.id===eid);
+  if (!e || !confirm(`למחוק את "${e.name}"?`)) return;
+  const res = await fetch(`/api/events/${eid}/delete`,{method:'POST',headers:{'Content-Type':'application/json'}});
+  const d = await res.json();
+  if (d.ok) location.reload(); else alert('שגיאה: '+(d.error||'נסה שוב'));
+}
+</script>
+{% endblock %}
