@@ -673,3 +673,6 @@ if __name__ == "__main__":
     init_db()
     print("IcePro מופעל על http://127.0.0.1:5000")
     app.run(debug=True)
+else:
+    # ב-Render או כל סביבת production
+    init_db()
