@@ -1,5 +1,5 @@
 import os
-from flask import Flask, render_template, request, jsonify, redirect, url_for, session
+from flask import Flask, render_template, request, jsonify, redirect, url_for, session, send_from_directory
 from database import get_connection, init_db
 from datetime import datetime, date
 import psycopg2.extras
@@ -83,6 +83,12 @@ def login():
             return redirect(url_for('dashboard'))
         error = 'שם משתמש או סיסמה שגויים'
     return render_template('login.html', error=error)
+
+
+@app.route('/sw.js')
+def service_worker():
+    return send_from_directory(app.static_folder, 'sw.js',
+                               mimetype='application/javascript')
 
 
 @app.route('/logout')
