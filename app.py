@@ -643,6 +643,83 @@ def calendar_view():
                            me=me)
 
 
+# ── API JSON endpoints for Flutter ──────────────────────────────────────────
+
+@app.route('/api/dashboard')
+@login_required
+def api_dashboard():
+    me = current_user()
+    fridges = query("""
+        SELECT f.id, f.name, f.location, f.capacity, COALESCE(i.quantity,0) AS quantity
+        FROM fridges f LEFT JOIN inventory i ON i.fridge_id=f.id ORDER BY f.id
+    """)
+    events = query("""
+        SELECT e.*, f.name AS fridge_name, u.display_name AS creator_name,
+               u.username AS created_by_username, u.color AS creator_color
+        FROM events e
+        LEFT JOIN fridges f ON f.id=e.fridge_id
+        LEFT JOIN users u ON u.id=e.created_by
+        ORDER BY e.event_date LIMIT 8
+    """)
+    return jsonify({
+        'events': rows_to_list(events),
+        'fridges': rows_to_list(fridges)
+    })
+
+
+@app.route('/api/events')
+@login_required
+def api_events():
+    me = current_user()
+    status = request.args.get('status', 'all')
+    user = request.args.get('user', 'all')
+    time = request.args.get('time', 'all')
+    conditions, params = [], []
+    if status != 'all':
+        conditions.append('e.status = %s'); params.append(status)
+    if user != 'all':
+        conditions.append('e.created_by = %s'); params.append(int(user))
+    if time == 'today':
+        conditions.append('e.event_date = CURRENT_DATE')
+    elif time == 'week':
+        conditions.append('e.event_date BETWEEN CURRENT_DATE AND CURRENT_DATE + INTERVAL \'7 days\'')
+    elif time == 'month':
+        conditions.append("to_char(e.event_date,'YYYY-MM') = to_char(NOW(),'YYYY-MM')")
+    elif time == 'future':
+        conditions.append('e.event_date >= CURRENT_DATE')
+    where = ('WHERE ' + ' AND '.join(conditions)) if conditions else ''
+    evts = query(f"""
+        SELECT e.*, f.name AS fridge_name, u.display_name AS creator_name,
+               u.username AS created_by_username, u.color AS creator_color,
+               bt.name AS bag_type_name, bt.weight_kg AS bag_weight_kg,
+               (e.created_by = %s) AS is_mine
+        FROM events e
+        LEFT JOIN fridges f ON f.id=e.fridge_id
+        LEFT JOIN users u ON u.id=e.created_by
+        LEFT JOIN bag_types bt ON bt.id=e.bag_type_id
+        {where} ORDER BY e.event_date DESC
+    """, tuple([me['id']] + params))
+    return jsonify(rows_to_list(evts))
+
+
+@app.route('/api/fridges')
+@login_required
+def api_fridges():
+    fridges = query("""
+        SELECT f.id, f.name, f.location, f.capacity, COALESCE(i.quantity,0) AS quantity
+        FROM fridges f LEFT JOIN inventory i ON i.fridge_id=f.id ORDER BY f.name
+    """)
+    return jsonify(rows_to_list(fridges))
+
+
+@app.route('/api/bag_types')
+@login_required
+def api_bag_types():
+    me = current_user()
+    bag_types = query('SELECT * FROM bag_types WHERE user_id=%s ORDER BY weight_kg', (me['id'],))
+    return jsonify(rows_to_list(bag_types))
+
+
 # ── costs ─────────────────────────────────────────────────────────────────────
 
 @app.route("/costs")
